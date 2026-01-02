@@ -1,0 +1,16 @@
+fastapi
+uvicorn
+paho-mqtt
+
+# pip install -r requirements.txt
+# ```
+
+# ---
+
+# ## 進階版本（指定版本號）
+
+# 如果需要固定版本以確保穩定性：
+# ```
+# fastapi==0.115.0
+# uvicorn==0.32.0
+# paho-mqtt==2.1.0

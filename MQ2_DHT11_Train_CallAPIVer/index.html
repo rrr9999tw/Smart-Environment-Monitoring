@@ -1,0 +1,1740 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>環境監控儀表板</title>
+    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@300;400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg-dark: #0a0e14;
+        --bg-panel: #131920;
+        --bg-gauge: #1a2332;
+        --accent-cyan: #00f5ff;
+        --accent-green: #00ff88;
+        --accent-yellow: #ffcc00;
+        --accent-red: #ff3366;
+        --accent-orange: #ff8800;
+        --accent-blue: #4dabf7;
+        --accent-purple: #a855f7;
+        --text-primary: #e8f4f8;
+        --text-secondary: #6b8a99;
+        --border-glow: rgba(0, 245, 255, 0.3);
+      }
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      body {
+        font-family: "Rajdhani", sans-serif;
+        background: var(--bg-dark);
+        color: var(--text-primary);
+        min-height: 100vh;
+      }
+      body::before {
+        content: "";
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(
+            90deg,
+            rgba(0, 245, 255, 0.03) 1px,
+            transparent 1px
+          ),
+          linear-gradient(rgba(0, 245, 255, 0.03) 1px, transparent 1px);
+        background-size: 50px 50px;
+        pointer-events: none;
+        z-index: 0;
+      }
+      .container {
+        position: relative;
+        z-index: 1;
+        max-width: 1400px;
+        margin: 0 auto;
+        padding: 20px;
+      }
+      header {
+        text-align: center;
+        margin-bottom: 25px;
+        padding: 20px;
+        background: linear-gradient(
+          135deg,
+          rgba(0, 245, 255, 0.1) 0%,
+          transparent 50%
+        );
+        border: 1px solid var(--border-glow);
+        border-radius: 16px;
+      }
+      h1 {
+        font-family: "Orbitron", monospace;
+        font-size: 2rem;
+        font-weight: 900;
+        letter-spacing: 3px;
+        background: linear-gradient(
+          135deg,
+          var(--accent-cyan),
+          var(--accent-green)
+        );
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        margin-bottom: 5px;
+      }
+      .subtitle {
+        font-size: 0.9rem;
+        color: var(--text-secondary);
+        letter-spacing: 2px;
+      }
+      .connection-status {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 10px;
+        padding: 6px 15px;
+        background: rgba(0, 0, 0, 0.3);
+        border-radius: 20px;
+      }
+      .status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--accent-red);
+        box-shadow: 0 0 8px var(--accent-red);
+      }
+      .status-dot.connected {
+        background: var(--accent-green);
+        box-shadow: 0 0 8px var(--accent-green);
+        animation: pulse 2s infinite;
+      }
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.5;
+        }
+      }
+      .status-text {
+        font-size: 0.8rem;
+        font-weight: 600;
+      }
+      .tab-nav {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 20px;
+        padding: 5px;
+        background: var(--bg-panel);
+        border-radius: 12px;
+        border: 1px solid var(--border-glow);
+      }
+      .tab-btn {
+        flex: 1;
+        padding: 12px 20px;
+        background: transparent;
+        border: none;
+        border-radius: 8px;
+        font-family: "Orbitron", monospace;
+        font-size: 0.85rem;
+        font-weight: 700;
+        color: var(--text-secondary);
+        cursor: pointer;
+        transition: all 0.3s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+      }
+      .tab-btn:hover {
+        background: rgba(0, 245, 255, 0.1);
+        color: var(--text-primary);
+      }
+      .tab-btn.active {
+        background: linear-gradient(
+          135deg,
+          rgba(0, 245, 255, 0.2),
+          rgba(0, 255, 136, 0.2)
+        );
+        color: var(--accent-cyan);
+        box-shadow: 0 0 15px rgba(0, 245, 255, 0.2);
+      }
+      .tab-content {
+        display: none;
+      }
+      .tab-content.active {
+        display: block;
+      }
+      .dashboard {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 20px;
+      }
+      @media (max-width: 1100px) {
+        .dashboard {
+          grid-template-columns: repeat(2, 1fr);
+        }
+      }
+      @media (max-width: 700px) {
+        .dashboard {
+          grid-template-columns: 1fr;
+        }
+      }
+      .panel {
+        background: var(--bg-panel);
+        border: 1px solid var(--border-glow);
+        border-radius: 14px;
+        padding: 18px;
+        position: relative;
+        overflow: hidden;
+      }
+      .panel::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 2px;
+        background: linear-gradient(
+          90deg,
+          transparent,
+          var(--accent-cyan),
+          transparent
+        );
+      }
+      .panel.temp-panel::before {
+        background: linear-gradient(
+          90deg,
+          transparent,
+          var(--accent-orange),
+          transparent
+        );
+      }
+      .panel.humidity-panel::before {
+        background: linear-gradient(
+          90deg,
+          transparent,
+          var(--accent-blue),
+          transparent
+        );
+      }
+      .panel-title {
+        font-family: "Orbitron", monospace;
+        font-size: 0.75rem;
+        font-weight: 700;
+        letter-spacing: 2px;
+        text-transform: uppercase;
+        color: var(--text-secondary);
+        margin-bottom: 15px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .panel-title::before {
+        content: "";
+        width: 5px;
+        height: 5px;
+        background: var(--accent-cyan);
+        border-radius: 2px;
+        box-shadow: 0 0 8px var(--accent-cyan);
+      }
+      .temp-panel .panel-title::before {
+        background: var(--accent-orange);
+        box-shadow: 0 0 8px var(--accent-orange);
+      }
+      .humidity-panel .panel-title::before {
+        background: var(--accent-blue);
+        box-shadow: 0 0 8px var(--accent-blue);
+      }
+      .gauge-container {
+        position: relative;
+        width: 160px;
+        height: 160px;
+        margin: 0 auto 15px;
+      }
+      .gauge-bg {
+        position: absolute;
+        width: 100%;
+        height: 100%;
+        border-radius: 50%;
+        background: radial-gradient(
+            circle at center,
+            var(--bg-gauge) 58%,
+            transparent 59%
+          ),
+          conic-gradient(
+            from 135deg,
+            var(--accent-green) 0deg,
+            var(--accent-yellow) 90deg,
+            var(--accent-orange) 180deg,
+            var(--accent-red) 270deg
+          );
+        clip-path: polygon(50% 50%, 0 100%, 0 15%, 50% 0, 100% 15%, 100% 100%);
+      }
+      .gauge-bg.temp {
+        background: radial-gradient(
+            circle at center,
+            var(--bg-gauge) 58%,
+            transparent 59%
+          ),
+          conic-gradient(
+            from 135deg,
+            var(--accent-blue) 0deg,
+            var(--accent-cyan) 60deg,
+            var(--accent-green) 120deg,
+            var(--accent-yellow) 180deg,
+            var(--accent-orange) 220deg,
+            var(--accent-red) 270deg
+          );
+        clip-path: polygon(50% 50%, 0 100%, 0 15%, 50% 0, 100% 15%, 100% 100%);
+      }
+      .gauge-mask {
+        position: absolute;
+        width: 78%;
+        height: 78%;
+        top: 11%;
+        left: 11%;
+        border-radius: 50%;
+        background: var(--bg-panel);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+      }
+      .gauge-value {
+        font-family: "Orbitron", monospace;
+        font-size: 2rem;
+        font-weight: 900;
+        color: var(--accent-cyan);
+        text-shadow: 0 0 15px rgba(0, 245, 255, 0.7);
+        transition: color 0.3s ease;
+      }
+      .gauge-value.warning {
+        color: var(--accent-yellow);
+        text-shadow: 0 0 15px rgba(255, 204, 0, 0.7);
+      }
+      .gauge-value.danger {
+        color: var(--accent-red);
+        text-shadow: 0 0 15px rgba(255, 51, 102, 0.7);
+        animation: dangerPulse 0.5s infinite;
+      }
+      @keyframes dangerPulse {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.7;
+        }
+      }
+      .gauge-unit {
+        font-size: 0.85rem;
+        color: var(--text-secondary);
+        margin-top: 2px;
+      }
+      .gauge-label {
+        font-size: 0.65rem;
+        color: var(--text-secondary);
+        margin-top: 3px;
+      }
+      .gauge-needle {
+        position: absolute;
+        width: 2px;
+        height: 55px;
+        background: linear-gradient(to top, var(--accent-cyan), transparent);
+        left: 50%;
+        bottom: 50%;
+        transform-origin: bottom center;
+        transform: translateX(-50%) rotate(-90deg);
+        border-radius: 2px;
+        transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+        box-shadow: 0 0 8px var(--accent-cyan);
+      }
+      .gauge-needle.temp {
+        background: linear-gradient(to top, var(--accent-orange), transparent);
+        box-shadow: 0 0 8px var(--accent-orange);
+      }
+      .gauge-center {
+        position: absolute;
+        width: 10px;
+        height: 10px;
+        background: var(--accent-cyan);
+        border-radius: 50%;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        box-shadow: 0 0 10px var(--accent-cyan);
+      }
+      .gauge-center.temp {
+        background: var(--accent-orange);
+        box-shadow: 0 0 10px var(--accent-orange);
+      }
+      .data-cards {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 8px;
+        margin-top: 12px;
+      }
+      .data-card {
+        background: rgba(0, 0, 0, 0.3);
+        border: 1px solid rgba(0, 245, 255, 0.1);
+        border-radius: 8px;
+        padding: 10px;
+        text-align: center;
+      }
+      .data-card-label {
+        font-size: 0.65rem;
+        color: var(--text-secondary);
+        text-transform: uppercase;
+        margin-bottom: 4px;
+      }
+      .data-card-value {
+        font-family: "Orbitron", monospace;
+        font-size: 1rem;
+        font-weight: 700;
+      }
+      .humidity-display {
+        text-align: center;
+        padding: 20px 0;
+      }
+      .humidity-value {
+        font-family: "Orbitron", monospace;
+        font-size: 3rem;
+        font-weight: 900;
+        color: var(--accent-blue);
+        text-shadow: 0 0 20px rgba(77, 171, 247, 0.5);
+      }
+      .humidity-unit {
+        font-size: 1.2rem;
+        color: var(--text-secondary);
+      }
+      .humidity-bar {
+        margin-top: 15px;
+        height: 10px;
+        background: rgba(0, 0, 0, 0.3);
+        border-radius: 5px;
+        overflow: hidden;
+      }
+      .humidity-fill {
+        height: 100%;
+        background: linear-gradient(
+          90deg,
+          var(--accent-blue),
+          var(--accent-cyan)
+        );
+        border-radius: 5px;
+        transition: width 0.5s ease;
+      }
+      .alarm-indicator {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        padding: 12px;
+        background: rgba(0, 255, 136, 0.1);
+        border: 1px solid rgba(0, 255, 136, 0.3);
+        border-radius: 10px;
+        margin-bottom: 15px;
+      }
+      .alarm-indicator.active {
+        background: rgba(255, 51, 102, 0.15);
+        border-color: rgba(255, 51, 102, 0.5);
+        animation: alarmFlash 1s infinite;
+      }
+      @keyframes alarmFlash {
+        0%,
+        100% {
+          background: rgba(255, 51, 102, 0.15);
+        }
+        50% {
+          background: rgba(255, 51, 102, 0.3);
+        }
+      }
+      .alarm-icon {
+        font-size: 1.3rem;
+      }
+      .alarm-text {
+        font-family: "Orbitron", monospace;
+        font-size: 0.8rem;
+        font-weight: 700;
+      }
+      .alarm-indicator .alarm-text {
+        color: var(--accent-green);
+      }
+      .alarm-indicator.active .alarm-text {
+        color: var(--accent-red);
+      }
+      .threshold-setting {
+        margin: 12px 0;
+        padding: 12px;
+        background: rgba(0, 0, 0, 0.2);
+        border-radius: 8px;
+      }
+      .threshold-label {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 8px;
+        font-size: 0.75rem;
+        color: var(--text-secondary);
+      }
+      .threshold-input-group {
+        display: flex;
+        gap: 8px;
+      }
+      .threshold-input {
+        flex: 1;
+        padding: 8px 12px;
+        background: rgba(0, 0, 0, 0.3);
+        border: 1px solid rgba(0, 245, 255, 0.2);
+        border-radius: 6px;
+        color: var(--text-primary);
+        font-family: "Orbitron", monospace;
+        font-size: 0.9rem;
+        outline: none;
+      }
+      .threshold-input:focus {
+        border-color: var(--accent-cyan);
+      }
+      .btn-set {
+        padding: 8px 16px;
+        background: var(--accent-cyan);
+        color: var(--bg-dark);
+        border: none;
+        border-radius: 6px;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      .btn-set:hover {
+        background: var(--accent-green);
+      }
+      .control-buttons {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .btn {
+        font-family: "Rajdhani", sans-serif;
+        font-size: 0.85rem;
+        font-weight: 700;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        padding: 12px 16px;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: all 0.3s ease;
+      }
+      .btn-silence {
+        background: linear-gradient(
+          135deg,
+          var(--accent-orange),
+          var(--accent-red)
+        );
+        color: white;
+      }
+      .btn-enable {
+        background: linear-gradient(
+          135deg,
+          var(--accent-cyan),
+          var(--accent-green)
+        );
+        color: var(--bg-dark);
+      }
+      .btn-disable {
+        background: rgba(255, 255, 255, 0.1);
+        color: var(--text-secondary);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+      }
+      .btn-reset {
+        background: transparent;
+        color: var(--accent-yellow);
+        border: 1px solid var(--accent-yellow);
+      }
+      .btn:hover {
+        transform: translateY(-2px);
+      }
+      .buzzer-status {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        padding: 8px;
+        background: rgba(0, 0, 0, 0.3);
+        border-radius: 6px;
+        margin-bottom: 12px;
+        font-size: 0.8rem;
+      }
+      .chart-container {
+        height: 150px;
+        background: rgba(0, 0, 0, 0.3);
+        border-radius: 8px;
+        padding: 12px;
+      }
+      .chart-canvas {
+        width: 100%;
+        height: 100%;
+      }
+      .threshold-bar {
+        margin-top: 12px;
+      }
+      .threshold-bar-label {
+        display: flex;
+        justify-content: space-between;
+        font-size: 0.65rem;
+        color: var(--text-secondary);
+        margin-bottom: 5px;
+      }
+      .threshold-track {
+        height: 5px;
+        background: rgba(0, 0, 0, 0.3);
+        border-radius: 3px;
+        overflow: hidden;
+        position: relative;
+      }
+      .threshold-fill {
+        height: 100%;
+        background: linear-gradient(
+          90deg,
+          var(--accent-green),
+          var(--accent-yellow),
+          var(--accent-red)
+        );
+        border-radius: 3px;
+        transition: width 0.5s ease;
+      }
+      .threshold-marker {
+        position: absolute;
+        top: -3px;
+        width: 2px;
+        height: 11px;
+        background: white;
+        transform: translateX(-50%);
+        box-shadow: 0 0 4px white;
+      }
+      .full-width {
+        grid-column: 1 / -1;
+      }
+      .dual-charts {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 15px;
+      }
+      @media (max-width: 700px) {
+        .dual-charts {
+          grid-template-columns: 1fr;
+        }
+      }
+      .log-container {
+        max-height: 220px;
+        overflow-y: auto;
+        background: rgba(0, 0, 0, 0.3);
+        border-radius: 8px;
+        padding: 10px;
+      }
+      .log-container::-webkit-scrollbar {
+        width: 5px;
+      }
+      .log-container::-webkit-scrollbar-track {
+        background: rgba(0, 0, 0, 0.2);
+        border-radius: 3px;
+      }
+      .log-container::-webkit-scrollbar-thumb {
+        background: var(--accent-cyan);
+        border-radius: 3px;
+      }
+      .log-entry {
+        font-size: 0.75rem;
+        padding: 6px 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        display: flex;
+        gap: 8px;
+        align-items: flex-start;
+      }
+      .log-entry:last-child {
+        border-bottom: none;
+      }
+      .log-time {
+        color: var(--text-secondary);
+        min-width: 65px;
+        flex-shrink: 0;
+      }
+      .log-type {
+        padding: 1px 6px;
+        border-radius: 3px;
+        font-size: 0.65rem;
+        font-weight: 700;
+        min-width: 45px;
+        text-align: center;
+        flex-shrink: 0;
+      }
+      .log-type.gas {
+        background: rgba(255, 136, 0, 0.2);
+        color: var(--accent-orange);
+      }
+      .log-type.temp {
+        background: rgba(255, 51, 102, 0.2);
+        color: var(--accent-red);
+      }
+      .log-type.system {
+        background: rgba(0, 245, 255, 0.2);
+        color: var(--accent-cyan);
+      }
+      .log-type.clear {
+        background: rgba(0, 255, 136, 0.2);
+        color: var(--accent-green);
+      }
+      .log-message {
+        color: var(--text-primary);
+        flex: 1;
+      }
+      .history-controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 15px;
+        margin-bottom: 20px;
+        padding: 15px;
+        background: var(--bg-panel);
+        border: 1px solid var(--border-glow);
+        border-radius: 12px;
+        align-items: flex-end;
+      }
+      .control-group {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+      }
+      .control-group label {
+        font-size: 0.75rem;
+        color: var(--text-secondary);
+        text-transform: uppercase;
+      }
+      .control-group input,
+      .control-group select {
+        padding: 10px 15px;
+        background: rgba(0, 0, 0, 0.3);
+        border: 1px solid rgba(0, 245, 255, 0.2);
+        border-radius: 8px;
+        color: var(--text-primary);
+        font-family: "Rajdhani", sans-serif;
+        font-size: 0.9rem;
+        outline: none;
+      }
+      .control-group input:focus,
+      .control-group select:focus {
+        border-color: var(--accent-cyan);
+      }
+      .btn-query {
+        padding: 10px 25px;
+        background: linear-gradient(
+          135deg,
+          var(--accent-purple),
+          var(--accent-blue)
+        );
+        color: white;
+        border: none;
+        border-radius: 8px;
+        font-family: "Orbitron", monospace;
+        font-weight: 700;
+        cursor: pointer;
+        transition: all 0.3s ease;
+      }
+      .btn-query:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 20px rgba(168, 85, 247, 0.4);
+      }
+      .btn-export {
+        padding: 10px 25px;
+        background: linear-gradient(
+          135deg,
+          var(--accent-green),
+          var(--accent-cyan)
+        );
+        color: var(--bg-dark);
+        border: none;
+        border-radius: 8px;
+        font-family: "Orbitron", monospace;
+        font-weight: 700;
+        cursor: pointer;
+        transition: all 0.3s ease;
+      }
+      .btn-export:hover {
+        transform: translateY(-2px);
+      }
+      .history-stats {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 15px;
+        margin-bottom: 20px;
+      }
+      .stat-card {
+        background: var(--bg-panel);
+        border: 1px solid var(--border-glow);
+        border-radius: 12px;
+        padding: 15px;
+        text-align: center;
+      }
+      .stat-card h3 {
+        font-family: "Orbitron", monospace;
+        font-size: 0.7rem;
+        color: var(--text-secondary);
+        margin-bottom: 10px;
+        text-transform: uppercase;
+      }
+      .stat-value {
+        font-family: "Orbitron", monospace;
+        font-size: 1.8rem;
+        font-weight: 900;
+      }
+      .stat-value.gas {
+        color: var(--accent-orange);
+      }
+      .stat-value.temp {
+        color: var(--accent-red);
+      }
+      .stat-value.humidity {
+        color: var(--accent-blue);
+      }
+      .stat-value.alarm {
+        color: var(--accent-yellow);
+      }
+      .stat-sub {
+        font-size: 0.75rem;
+        color: var(--text-secondary);
+        margin-top: 5px;
+      }
+      .history-chart-container {
+        background: var(--bg-panel);
+        border: 1px solid var(--border-glow);
+        border-radius: 12px;
+        padding: 20px;
+        margin-bottom: 20px;
+      }
+      .history-chart-container h3 {
+        font-family: "Orbitron", monospace;
+        font-size: 0.8rem;
+        color: var(--text-secondary);
+        margin-bottom: 15px;
+        text-transform: uppercase;
+      }
+      .history-chart {
+        height: 250px;
+        background: rgba(0, 0, 0, 0.3);
+        border-radius: 8px;
+        position: relative;
+      }
+      .history-chart canvas {
+        width: 100%;
+        height: 100%;
+      }
+      .data-table-container {
+        background: var(--bg-panel);
+        border: 1px solid var(--border-glow);
+        border-radius: 12px;
+        padding: 20px;
+        overflow-x: auto;
+      }
+      .data-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.85rem;
+      }
+      .data-table th {
+        font-family: "Orbitron", monospace;
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        color: var(--accent-cyan);
+        padding: 12px 10px;
+        text-align: left;
+        border-bottom: 2px solid var(--border-glow);
+        white-space: nowrap;
+      }
+      .data-table td {
+        padding: 10px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      }
+      .data-table tr:hover {
+        background: rgba(0, 245, 255, 0.05);
+      }
+      .data-table .alarm-yes {
+        color: var(--accent-red);
+        font-weight: 700;
+      }
+      .data-table .alarm-no {
+        color: var(--accent-green);
+      }
+      .loading {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 40px;
+        color: var(--text-secondary);
+      }
+      .loading::before {
+        content: "";
+        width: 30px;
+        height: 30px;
+        border: 3px solid var(--border-glow);
+        border-top-color: var(--accent-cyan);
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+        margin-right: 10px;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      .no-data {
+        text-align: center;
+        padding: 40px;
+        color: var(--text-secondary);
+      }
+      .api-status {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        margin-left: 15px;
+        font-size: 0.8rem;
+      }
+      .api-status .status-dot {
+        width: 6px;
+        height: 6px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <header>
+        <h1>🌡️ 環境監控系統</h1>
+        <p class="subtitle">ESP32 Gas & Temperature Monitor</p>
+        <div
+          style="
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-wrap: wrap;
+            gap: 10px;
+          "
+        >
+          <div class="connection-status">
+            <div class="status-dot" id="statusDot"></div>
+            <span class="status-text" id="statusText">連線中...</span>
+          </div>
+          <div class="api-status">
+            <div class="status-dot" id="apiStatusDot"></div>
+            <span id="apiStatusText">API: 檢查中...</span>
+          </div>
+        </div>
+      </header>
+      <div class="tab-nav">
+        <button class="tab-btn active" onclick="switchTab('realtime')">
+          <span>📡</span> 即時監控
+        </button>
+        <button class="tab-btn" onclick="switchTab('history')">
+          <span>📊</span> 歷史資料
+        </button>
+      </div>
+      <div id="tab-realtime" class="tab-content active">
+        <div class="dashboard">
+          <div class="panel">
+            <div class="panel-title">可燃氣體監測</div>
+            <div class="gauge-container">
+              <div class="gauge-bg"></div>
+              <div class="gauge-needle" id="gasNeedle"></div>
+              <div class="gauge-center"></div>
+              <div class="gauge-mask">
+                <div class="gauge-value" id="gasValue">--</div>
+                <div class="gauge-unit">RAW</div>
+                <div class="gauge-label" id="gasLabel">等待數據...</div>
+              </div>
+            </div>
+            <div class="threshold-bar">
+              <div class="threshold-bar-label">
+                <span>安全</span
+                ><span>閾值: <span id="gasThresholdDisplay">1500</span></span
+                ><span>危險</span>
+              </div>
+              <div class="threshold-track">
+                <div class="threshold-fill" id="gasFill"></div>
+                <div
+                  class="threshold-marker"
+                  id="gasMarker"
+                  style="left: 36.6%"
+                ></div>
+              </div>
+            </div>
+            <div class="data-cards">
+              <div class="data-card">
+                <div class="data-card-label">電壓</div>
+                <div class="data-card-value">
+                  <span id="voltageValue">--</span>V
+                </div>
+              </div>
+              <div class="data-card">
+                <div class="data-card-label">濃度</div>
+                <div class="data-card-value">
+                  <span id="percentValue">--</span>%
+                </div>
+              </div>
+            </div>
+            <div class="threshold-setting">
+              <div class="threshold-label"><span>⚙️ 氣體警報閾值</span></div>
+              <div class="threshold-input-group">
+                <input
+                  type="number"
+                  class="threshold-input"
+                  id="gasThresholdInput"
+                  value="1500"
+                  min="0"
+                  max="4095"
+                />
+                <button class="btn-set" onclick="setGasThreshold()">
+                  設定
+                </button>
+              </div>
+            </div>
+          </div>
+          <div class="panel temp-panel">
+            <div class="panel-title">溫度監測</div>
+            <div class="gauge-container">
+              <div class="gauge-bg temp"></div>
+              <div class="gauge-needle temp" id="tempNeedle"></div>
+              <div class="gauge-center temp"></div>
+              <div class="gauge-mask">
+                <div class="gauge-value" id="tempValue">--</div>
+                <div class="gauge-unit">°C</div>
+                <div class="gauge-label" id="tempLabel">等待數據...</div>
+              </div>
+            </div>
+            <div class="threshold-bar">
+              <div class="threshold-bar-label">
+                <span>低溫</span
+                ><span>閾值: <span id="tempThresholdDisplay">35</span>°C</span
+                ><span>高溫</span>
+              </div>
+              <div class="threshold-track">
+                <div class="threshold-fill" id="tempFill"></div>
+                <div
+                  class="threshold-marker"
+                  id="tempMarker"
+                  style="left: 58.3%"
+                ></div>
+              </div>
+            </div>
+            <div class="alarm-indicator" id="tempAlarmIndicator">
+              <span class="alarm-icon" id="tempAlarmIcon">✓</span>
+              <span class="alarm-text" id="tempAlarmText">溫度正常</span>
+            </div>
+            <div class="threshold-setting">
+              <div class="threshold-label"><span>⚙️ 溫度警報上限</span></div>
+              <div class="threshold-input-group">
+                <input
+                  type="number"
+                  class="threshold-input"
+                  id="tempThresholdInput"
+                  value="35"
+                  min="0"
+                  max="60"
+                  step="0.5"
+                />
+                <button class="btn-set" onclick="setTempThreshold()">
+                  設定
+                </button>
+              </div>
+            </div>
+          </div>
+          <div class="panel humidity-panel">
+            <div class="panel-title">濕度監測</div>
+            <div class="humidity-display">
+              <span class="humidity-value" id="humidityValue">--</span
+              ><span class="humidity-unit">%</span>
+            </div>
+            <div class="humidity-bar">
+              <div
+                class="humidity-fill"
+                id="humidityFill"
+                style="width: 0%"
+              ></div>
+            </div>
+            <div class="data-cards" style="margin-top: 15px">
+              <div class="data-card">
+                <div class="data-card-label">舒適度</div>
+                <div class="data-card-value" id="comfortLevel">--</div>
+              </div>
+              <div class="data-card">
+                <div class="data-card-label">露點</div>
+                <div class="data-card-value">
+                  <span id="dewPoint">--</span>°C
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-title">警報控制</div>
+            <div class="alarm-indicator" id="gasAlarmIndicator">
+              <span class="alarm-icon" id="gasAlarmIcon">✓</span
+              ><span class="alarm-text" id="gasAlarmText">系統正常</span>
+            </div>
+            <div class="buzzer-status">
+              <span>🔔</span
+              ><span id="buzzerStatusText">蜂鳴器: 等待中...</span>
+            </div>
+            <div class="control-buttons">
+              <button class="btn btn-silence" onclick="silenceBuzzer()">
+                🔇 立即靜音
+              </button>
+              <button class="btn btn-enable" onclick="enableBuzzer()">
+                🔔 啟用蜂鳴器
+              </button>
+              <button class="btn btn-disable" onclick="disableBuzzer()">
+                🔕 停用蜂鳴器
+              </button>
+              <button class="btn btn-reset" onclick="resetAlarm()">
+                🔄 重置警報
+              </button>
+            </div>
+          </div>
+          <div class="panel full-width">
+            <div class="panel-title">歷史趨勢</div>
+            <div class="dual-charts">
+              <div>
+                <div
+                  style="
+                    color: var(--text-secondary);
+                    font-size: 0.7rem;
+                    margin-bottom: 8px;
+                    text-align: center;
+                  "
+                >
+                  可燃氣體
+                </div>
+                <div class="chart-container">
+                  <canvas class="chart-canvas" id="gasChart"></canvas>
+                </div>
+              </div>
+              <div>
+                <div
+                  style="
+                    color: var(--text-secondary);
+                    font-size: 0.7rem;
+                    margin-bottom: 8px;
+                    text-align: center;
+                  "
+                >
+                  溫度
+                </div>
+                <div class="chart-container">
+                  <canvas class="chart-canvas" id="tempChart"></canvas>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="panel full-width">
+            <div class="panel-title">系統日誌</div>
+            <div class="log-container" id="logContainer">
+              <div class="log-entry">
+                <span class="log-time">--:--:--</span
+                ><span class="log-type system">系統</span
+                ><span class="log-message">系統啟動中...</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div id="tab-history" class="tab-content">
+        <div class="history-controls">
+          <div class="control-group">
+            <label>開始日期</label><input type="date" id="startDate" />
+          </div>
+          <div class="control-group">
+            <label>結束日期</label><input type="date" id="endDate" />
+          </div>
+          <div class="control-group">
+            <label>資料類型</label
+            ><select id="dataType">
+              <option value="gas">氣體感測</option>
+              <option value="temperature">溫濕度</option>
+              <option value="alarms">警報日誌</option>
+            </select>
+          </div>
+          <div class="control-group">
+            <label>筆數限制</label
+            ><select id="limitCount">
+              <option value="50">50 筆</option>
+              <option value="100" selected>100 筆</option>
+              <option value="500">500 筆</option>
+              <option value="1000">1000 筆</option>
+            </select>
+          </div>
+          <button class="btn-query" onclick="queryHistory()">🔍 查詢</button>
+          <button class="btn-export" onclick="exportCSV()">📥 匯出 CSV</button>
+        </div>
+        <div class="history-stats" id="statsContainer">
+          <div class="stat-card">
+            <h3>平均氣體值</h3>
+            <div class="stat-value gas" id="statGasAvg">--</div>
+            <div class="stat-sub">RAW</div>
+          </div>
+          <div class="stat-card">
+            <h3>平均溫度</h3>
+            <div class="stat-value temp" id="statTempAvg">--</div>
+            <div class="stat-sub">°C</div>
+          </div>
+          <div class="stat-card">
+            <h3>平均濕度</h3>
+            <div class="stat-value humidity" id="statHumidityAvg">--</div>
+            <div class="stat-sub">%</div>
+          </div>
+          <div class="stat-card">
+            <h3>警報次數</h3>
+            <div class="stat-value alarm" id="statAlarmCount">--</div>
+            <div class="stat-sub">次</div>
+          </div>
+        </div>
+        <div class="history-chart-container">
+          <h3>📈 歷史趨勢圖</h3>
+          <div class="history-chart"><canvas id="historyChart"></canvas></div>
+        </div>
+        <div class="data-table-container">
+          <h3 class="panel-title">📋 詳細資料</h3>
+          <div id="tableContainer">
+            <div class="no-data">請選擇日期範圍並點擊查詢</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script>
+      const MQTT_BROKER = "wss://8be4a35a58084bec968d67f734dc2454.s1.eu.hivemq.cloud:8884/mqtt";
+        // "wss://7b51b067499440f78a971e9e77946e89.s1.eu.hivemq.cloud:8884/mqtt";
+      const MQTT_USER = "shawnc20";
+      const MQTT_PASSWORD = "Shawnc20";
+      const TOPIC_GAS_DATA = "sensor/gas/data";
+      const TOPIC_TEMP_DATA = "sensor/temp/data";
+      const TOPIC_BUZZER_CONTROL = "sensor/gas/buzzer";
+      const TOPIC_ALARM_LOG = "sensor/alarm/log";
+      const API_BASE_URL = "http://localhost:8000"; // 未來修改為您的 API 端點 - 在此先不改
+      let client = null,
+        gasHistoryData = [],
+        tempHistoryData = [],
+        gasChartCtx = null,
+        tempChartCtx = null,
+        historyChartCtx = null;
+      let currentGasThreshold = 1500,
+        currentTempThreshold = 35,
+        currentHistoryData = [];
+      const MAX_HISTORY = 50;
+
+      function init() {
+        initCharts();
+        initHistoryChart();
+        connectMQTT();
+        checkAPIStatus();
+        setDefaultDates();
+        addLog("系統", "儀表板初始化完成", "system");
+      }
+      function setDefaultDates() {
+        const today = new Date(),
+          weekAgo = new Date(today);
+        weekAgo.setDate(weekAgo.getDate() - 7);
+        document.getElementById("endDate").value = today
+          .toISOString()
+          .split("T")[0];
+        document.getElementById("startDate").value = weekAgo
+          .toISOString()
+          .split("T")[0];
+      }
+      function switchTab(tabName) {
+        document
+          .querySelectorAll(".tab-btn")
+          .forEach((btn) => btn.classList.remove("active"));
+        event.target.closest(".tab-btn").classList.add("active");
+        document
+          .querySelectorAll(".tab-content")
+          .forEach((content) => content.classList.remove("active"));
+        document.getElementById(`tab-${tabName}`).classList.add("active");
+        if (tabName === "history") loadStats();
+      }
+      async function checkAPIStatus() {
+        try {
+          const r = await fetch(`${API_BASE_URL}/`);
+          if (r.ok) {
+            document.getElementById("apiStatusDot").classList.add("connected");
+            document.getElementById("apiStatusText").textContent =
+              "API: 已連線";
+          }
+        } catch (e) {
+          document.getElementById("apiStatusDot").classList.remove("connected");
+          document.getElementById("apiStatusText").textContent = "API: 離線";
+        }
+      }
+      async function loadStats() {
+        const startDate = document.getElementById("startDate").value,
+          endDate = document.getElementById("endDate").value;
+        try {
+          const params = new URLSearchParams();
+          if (startDate) params.append("start_date", startDate);
+          if (endDate) params.append("end_date", endDate);
+          const r = await fetch(`${API_BASE_URL}/api/stats?${params}`);
+          if (r.ok) {
+            const s = await r.json();
+            document.getElementById("statGasAvg").textContent =
+              s.gas.avg_value || "--";
+            document.getElementById("statTempAvg").textContent =
+              s.temperature.avg_temp || "--";
+            document.getElementById("statHumidityAvg").textContent =
+              s.temperature.avg_humidity || "--";
+            document.getElementById("statAlarmCount").textContent =
+              (s.gas.alarm_count || 0) + (s.temperature.alarm_count || 0);
+          }
+        } catch (e) {
+          console.error("載入統計失敗:", e);
+        }
+      }
+      async function queryHistory() {
+        const startDate = document.getElementById("startDate").value,
+          endDate = document.getElementById("endDate").value,
+          dataType = document.getElementById("dataType").value,
+          limit = document.getElementById("limitCount").value;
+        const tc = document.getElementById("tableContainer");
+        tc.innerHTML = '<div class="loading">載入中...</div>';
+        try {
+          const params = new URLSearchParams();
+          if (startDate) params.append("start_date", startDate);
+          if (endDate) params.append("end_date", endDate);
+          params.append("limit", limit);
+          let endpoint =
+            dataType === "gas"
+              ? "/api/gas"
+              : dataType === "temperature"
+              ? "/api/temperature"
+              : "/api/alarms";
+          const r = await fetch(`${API_BASE_URL}${endpoint}?${params}`);
+          if (!r.ok) throw new Error("API 請求失敗");
+          const result = await r.json();
+          currentHistoryData = result.data;
+          if (result.data.length === 0) {
+            tc.innerHTML = '<div class="no-data">查無資料</div>';
+            return;
+          }
+          drawHistoryChart(result.data, dataType);
+          renderTable(result.data, dataType);
+          loadStats();
+        } catch (e) {
+          console.error("查詢失敗:", e);
+          tc.innerHTML = `<div class="no-data">查詢失敗: ${e.message}</div>`;
+        }
+      }
+      function renderTable(data, dataType) {
+        const tc = document.getElementById("tableContainer");
+        let headers = "",
+          rows = "";
+        if (dataType === "gas") {
+          headers =
+            "<tr><th>時間</th><th>Raw 值</th><th>電壓 (V)</th><th>濃度 (%)</th><th>閾值</th><th>警報</th></tr>";
+          rows = data
+            .map(
+              (r) =>
+                `<tr><td>${r.created_at}</td><td>${r.raw_value}</td><td>${
+                  r.voltage
+                }</td><td>${r.percentage}</td><td>${
+                  r.threshold
+                }</td><td class="${r.alarm ? "alarm-yes" : "alarm-no"}">${
+                  r.alarm ? "⚠️ 是" : "✓ 否"
+                }</td></tr>`
+            )
+            .join("");
+        } else if (dataType === "temperature") {
+          headers =
+            "<tr><th>時間</th><th>溫度 (°C)</th><th>濕度 (%)</th><th>閾值 (°C)</th><th>警報</th></tr>";
+          rows = data
+            .map(
+              (r) =>
+                `<tr><td>${r.created_at}</td><td>${r.temperature}</td><td>${
+                  r.humidity
+                }</td><td>${r.temp_threshold}</td><td class="${
+                  r.alarm ? "alarm-yes" : "alarm-no"
+                }">${r.alarm ? "⚠️ 是" : "✓ 否"}</td></tr>`
+            )
+            .join("");
+        } else {
+          headers = "<tr><th>時間</th><th>類型</th><th>訊息</th></tr>";
+          rows = data
+            .map(
+              (r) =>
+                `<tr><td>${r.created_at}</td><td><span class="log-type ${
+                  r.alarm_type.includes("clear") ? "clear" : r.alarm_type
+                }">${r.alarm_type}</span></td><td>${r.message}</td></tr>`
+            )
+            .join("");
+        }
+        tc.innerHTML = `<table class="data-table"><thead>${headers}</thead><tbody>${rows}</tbody></table><div style="text-align: center; margin-top: 15px; color: var(--text-secondary);">共 ${data.length} 筆資料</div>`;
+      }
+      function exportCSV() {
+        if (currentHistoryData.length === 0) {
+          alert("沒有資料可匯出");
+          return;
+        }
+        const dataType = document.getElementById("dataType").value,
+          headers = Object.keys(currentHistoryData[0]),
+          csvContent = [
+            headers.join(","),
+            ...currentHistoryData.map((row) =>
+              headers.map((h) => `"${row[h]}"`).join(",")
+            ),
+          ].join("\n");
+        const blob = new Blob(["\ufeff" + csvContent], {
+            type: "text/csv;charset=utf-8;",
+          }),
+          link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = `sensor_${dataType}_${
+          new Date().toISOString().split("T")[0]
+        }.csv`;
+        link.click();
+      }
+      function initHistoryChart() {
+        const c = document.getElementById("historyChart");
+        historyChartCtx = c.getContext("2d");
+        c.width = c.offsetWidth * 2;
+        c.height = c.offsetHeight * 2;
+        historyChartCtx.scale(2, 2);
+      }
+      function drawHistoryChart(data, dataType) {
+        const c = document.getElementById("historyChart"),
+          ctx = historyChartCtx,
+          w = c.offsetWidth,
+          h = c.offsetHeight;
+        ctx.clearRect(0, 0, w, h);
+        if (data.length < 2) return;
+        let values = [],
+          color = "#00f5ff";
+        if (dataType === "gas") {
+          values = data.map((d) => d.raw_value).reverse();
+          color = "#ff8800";
+        } else if (dataType === "temperature") {
+          values = data.map((d) => d.temperature).reverse();
+          color = "#ff3366";
+        } else {
+          ctx.fillStyle = "#6b8a99";
+          ctx.font = "14px Rajdhani";
+          ctx.textAlign = "center";
+          ctx.fillText("警報日誌無趨勢圖", w / 2, h / 2);
+          return;
+        }
+        const maxVal = Math.max(...values) * 1.1 || 1,
+          minVal = Math.min(...values) * 0.9 || 0,
+          range = maxVal - minVal || 1;
+        ctx.strokeStyle = "rgba(0,245,255,0.1)";
+        ctx.lineWidth = 1;
+        for (let i = 0; i <= 4; i++) {
+          ctx.beginPath();
+          ctx.moveTo(40, (h / 4) * i);
+          ctx.lineTo(w, (h / 4) * i);
+          ctx.stroke();
+          ctx.fillStyle = "#6b8a99";
+          ctx.font = "10px Orbitron";
+          ctx.textAlign = "right";
+          ctx.fillText(
+            (maxVal - (range * i) / 4).toFixed(1),
+            35,
+            (h / 4) * i + 4
+          );
+        }
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        values.forEach((val, i) => {
+          const x = 40 + (i / (values.length - 1)) * (w - 50),
+            y = h - ((val - minVal) / range) * h;
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+      }
+      function connectMQTT() {
+        addLog("系統", "正在連接 MQTT...", "system");
+        client = mqtt.connect(MQTT_BROKER, {
+          username: MQTT_USER,
+          password: MQTT_PASSWORD,
+          clientId: "web_" + Math.random().toString(16).substr(2, 8),
+          clean: true,
+          reconnectPeriod: 5000,
+        });
+        client.on("connect", () => {
+          document.getElementById("statusDot").classList.add("connected");
+          document.getElementById("statusText").textContent = "MQTT 已連線";
+          addLog("系統", "MQTT 連線成功！", "system");
+          client.subscribe([TOPIC_GAS_DATA, TOPIC_TEMP_DATA, TOPIC_ALARM_LOG]);
+        });
+        client.on("message", (topic, msg) => {
+          try {
+            const data = JSON.parse(msg.toString());
+            if (topic === TOPIC_GAS_DATA) updateGasData(data);
+            else if (topic === TOPIC_TEMP_DATA) updateTempData(data);
+            else if (topic === TOPIC_ALARM_LOG) handleAlarmLog(data);
+          } catch (e) {
+            console.error("Parse error:", e);
+          }
+        });
+        client.on("close", () => {
+          document.getElementById("statusDot").classList.remove("connected");
+          document.getElementById("statusText").textContent = "連線中斷";
+        });
+      }
+      function updateGasData(data) {
+        const {
+          raw,
+          voltage,
+          percentage,
+          threshold,
+          alarm,
+          buzzer_enabled,
+          manual_silence,
+        } = data;
+        currentGasThreshold = threshold;
+        document.getElementById("gasThresholdDisplay").textContent = threshold;
+        document.getElementById("gasThresholdInput").value = threshold;
+        document.getElementById("gasMarker").style.left =
+          (threshold / 4095) * 100 + "%";
+        document.getElementById("gasValue").textContent = raw;
+        document.getElementById("voltageValue").textContent = voltage;
+        document.getElementById("percentValue").textContent = percentage;
+        document.getElementById("gasFill").style.width =
+          (raw / 4095) * 100 + "%";
+        document.getElementById(
+          "gasNeedle"
+        ).style.transform = `translateX(-50%) rotate(${
+          (raw / 4095) * 180 - 90
+        }deg)`;
+        const gv = document.getElementById("gasValue"),
+          gl = document.getElementById("gasLabel");
+        gv.classList.remove("warning", "danger");
+        if (raw >= threshold) {
+          gv.classList.add("danger");
+          gl.textContent = "⚠️ 危險！";
+        } else if (raw >= threshold * 0.7) {
+          gv.classList.add("warning");
+          gl.textContent = "⚡ 偏高";
+        } else {
+          gl.textContent = "✓ 正常";
+        }
+        const gai = document.getElementById("gasAlarmIndicator");
+        if (alarm) {
+          gai.classList.add("active");
+          document.getElementById("gasAlarmIcon").textContent = "⚠️";
+          document.getElementById("gasAlarmText").textContent = "氣體警報！";
+        } else {
+          gai.classList.remove("active");
+          document.getElementById("gasAlarmIcon").textContent = "✓";
+          document.getElementById("gasAlarmText").textContent = "系統正常";
+        }
+        let bs = "🔔 待命";
+        if (!buzzer_enabled) bs = "🔕 已停用";
+        else if (manual_silence) bs = "🔇 已靜音";
+        else if (alarm) bs = "🔊 警報中";
+        document.getElementById("buzzerStatusText").textContent =
+          "蜂鳴器: " + bs;
+        gasHistoryData.push({ time: new Date(), value: raw });
+        if (gasHistoryData.length > MAX_HISTORY) gasHistoryData.shift();
+        updateGasChart();
+      }
+      function updateTempData(data) {
+        const { temperature, humidity, temp_threshold, alarm } = data;
+        currentTempThreshold = temp_threshold;
+        document.getElementById("tempThresholdDisplay").textContent =
+          temp_threshold;
+        document.getElementById("tempThresholdInput").value = temp_threshold;
+        document.getElementById("tempMarker").style.left =
+          (temp_threshold / 60) * 100 + "%";
+        document.getElementById("tempValue").textContent =
+          temperature.toFixed(1);
+        document.getElementById("tempFill").style.width =
+          (temperature / 60) * 100 + "%";
+        document.getElementById(
+          "tempNeedle"
+        ).style.transform = `translateX(-50%) rotate(${
+          (temperature / 60) * 180 - 90
+        }deg)`;
+        const tv = document.getElementById("tempValue"),
+          tl = document.getElementById("tempLabel");
+        tv.classList.remove("warning", "danger");
+        if (temperature >= temp_threshold) {
+          tv.classList.add("danger");
+          tl.textContent = "⚠️ 過高！";
+        } else if (temperature >= temp_threshold - 5) {
+          tv.classList.add("warning");
+          tl.textContent = "⚡ 偏高";
+        } else {
+          tl.textContent = "✓ 正常";
+        }
+        const tai = document.getElementById("tempAlarmIndicator");
+        if (alarm) {
+          tai.classList.add("active");
+          document.getElementById("tempAlarmIcon").textContent = "🔥";
+          document.getElementById("tempAlarmText").textContent = "溫度警報！";
+        } else {
+          tai.classList.remove("active");
+          document.getElementById("tempAlarmIcon").textContent = "✓";
+          document.getElementById("tempAlarmText").textContent = "溫度正常";
+        }
+        document.getElementById("humidityValue").textContent =
+          humidity.toFixed(0);
+        document.getElementById("humidityFill").style.width = humidity + "%";
+        let comfort = "適中";
+        if (humidity < 30) comfort = "乾燥";
+        else if (humidity < 60) comfort = "舒適";
+        else if (humidity < 80) comfort = "潮濕";
+        else comfort = "很潮濕";
+        document.getElementById("comfortLevel").textContent = comfort;
+        document.getElementById("dewPoint").textContent = (
+          temperature -
+          (100 - humidity) / 5
+        ).toFixed(1);
+        tempHistoryData.push({ time: new Date(), value: temperature });
+        if (tempHistoryData.length > MAX_HISTORY) tempHistoryData.shift();
+        updateTempChart();
+      }
+      function handleAlarmLog(data) {
+        const { type, message } = data;
+        let logType = "system",
+          label = "系統";
+        if (type === "gas") {
+          logType = "gas";
+          label = "氣體";
+        } else if (type === "temp") {
+          logType = "temp";
+          label = "溫度";
+        } else if (type.includes("clear")) {
+          logType = "clear";
+          label = "恢復";
+        }
+        addLog(label, message, logType);
+      }
+      function silenceBuzzer() {
+        sendCommand("silence");
+        addLog("系統", "發送靜音命令", "system");
+      }
+      function enableBuzzer() {
+        sendCommand("enable");
+        addLog("系統", "啟用蜂鳴器", "system");
+      }
+      function disableBuzzer() {
+        sendCommand("disable");
+        addLog("系統", "停用蜂鳴器", "system");
+      }
+      function resetAlarm() {
+        sendCommand("reset");
+        addLog("系統", "重置警報", "system");
+      }
+      function setGasThreshold() {
+        const v = parseInt(document.getElementById("gasThresholdInput").value);
+        if (v >= 0 && v <= 4095) {
+          sendCommand("set_gas_threshold", v);
+          addLog("系統", `氣體閾值設為 ${v}`, "system");
+        }
+      }
+      function setTempThreshold() {
+        const v = parseFloat(
+          document.getElementById("tempThresholdInput").value
+        );
+        if (v >= 0 && v <= 60) {
+          sendCommand("set_temp_threshold", v);
+          addLog("系統", `溫度閾值設為 ${v}°C`, "system");
+        }
+      }
+      function sendCommand(cmd, val = null) {
+        if (client && client.connected) {
+          const p = { command: cmd };
+          if (val !== null) p.value = val;
+          client.publish(TOPIC_BUZZER_CONTROL, JSON.stringify(p));
+        }
+      }
+      function initCharts() {
+        const gc = document.getElementById("gasChart");
+        gasChartCtx = gc.getContext("2d");
+        gc.width = gc.offsetWidth * 2;
+        gc.height = gc.offsetHeight * 2;
+        gasChartCtx.scale(2, 2);
+        const tc = document.getElementById("tempChart");
+        tempChartCtx = tc.getContext("2d");
+        tc.width = tc.offsetWidth * 2;
+        tc.height = tc.offsetHeight * 2;
+        tempChartCtx.scale(2, 2);
+      }
+      function updateGasChart() {
+        drawChart(
+          gasChartCtx,
+          document.getElementById("gasChart"),
+          gasHistoryData,
+          4095,
+          currentGasThreshold,
+          "#00f5ff"
+        );
+      }
+      function updateTempChart() {
+        drawChart(
+          tempChartCtx,
+          document.getElementById("tempChart"),
+          tempHistoryData,
+          60,
+          currentTempThreshold,
+          "#ff8800"
+        );
+      }
+      function drawChart(ctx, canvas, data, maxVal, threshold, color) {
+        const w = canvas.offsetWidth,
+          h = canvas.offsetHeight;
+        ctx.clearRect(0, 0, w, h);
+        if (data.length < 2) return;
+        ctx.strokeStyle = "rgba(0,245,255,0.1)";
+        ctx.lineWidth = 1;
+        for (let i = 0; i <= 4; i++) {
+          ctx.beginPath();
+          ctx.moveTo(0, (h / 4) * i);
+          ctx.lineTo(w, (h / 4) * i);
+          ctx.stroke();
+        }
+        const ty = h - (threshold / maxVal) * h;
+        ctx.strokeStyle = "rgba(255,51,102,0.5)";
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(0, ty);
+        ctx.lineTo(w, ty);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        data.forEach((p, i) => {
+          const x = (i / (MAX_HISTORY - 1)) * w,
+            y = h - (p.value / maxVal) * h;
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+      }
+      function addLog(type, msg, logType) {
+        const c = document.getElementById("logContainer"),
+          t = new Date().toLocaleTimeString("zh-TW"),
+          e = document.createElement("div");
+        e.className = "log-entry";
+        e.innerHTML = `<span class="log-time">${t}</span><span class="log-type ${logType}">${type}</span><span class="log-message">${msg}</span>`;
+        c.insertBefore(e, c.firstChild);
+        while (c.children.length > 30) c.removeChild(c.lastChild);
+      }
+      window.addEventListener("resize", () => {
+        initCharts();
+        updateGasChart();
+        updateTempChart();
+        initHistoryChart();
+      });
+      document.addEventListener("DOMContentLoaded", init);
+    </script>
+  </body>
+</html>
