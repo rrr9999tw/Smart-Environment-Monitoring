@@ -1,94 +1,249 @@
-# Smart Environment Monitoring & LINE Alert System
-# 智慧環境監控與 LINE 告警服務
+# FastAPI + Line 訊息傳遞 API
 
-An IoT solution integrating ESP32 sensors with a FastAPI backend to deliver real-time environmental safety alerts via LINE.
-本專案整合 ESP32 感測器與 FastAPI 後端，實現即時環境安全監測並透過 LINE 發送告警。
 
----
 
-## 🛠 Features / 功能
+透過 FastAPI 建立的 Line Bot 訊息發送服務。
 
-- **Push Message (`POST /send`)**: Send message to a specific user. (發送訊息給指定用戶)
-- **Broadcast (`POST /broadcast`)**: Send message to all followers. (發送訊息給所有好友)
-- **Multicast (`POST /multicast`)**: Send message to multiple users. (發送訊息給多個用戶)
-- **Webhook (`POST /webhook`)**: Handle incoming events from LINE. (接收 LINE 事件)
 
----
 
-## 🚀 Installation Steps / 安裝步驟
+## 功能
 
-### 1. Install Dependencies / 安裝依賴
-```bash
+
+
+- **推播訊息** (`POST /send`) - 發送訊息給指定用戶
+
+- **廣播訊息** (`POST /broadcast`) - 發送訊息給所有好友
+
+- **回覆訊息** (`POST /reply`) - 回覆收到的訊息
+
+- **多人推播** (`POST /multicast`) - 發送訊息給多個用戶
+
+- **Webhook** (`POST /webhook`) - 接收 Line 傳來的事件
+
+
+
+## 安裝步驟
+
+
+
+### 1. 安裝依賴
+
+
+
+『`bash
+
 pip install -r requirements.txt
-2. 設定線路通道
-前往LINE開發者控制台。
 
-建立提供者和訊息傳遞 API 通道。
+```
 
-在「訊息傳遞 API」標籤中：
 
-頒發通道存取令牌。
 
-設定Webhook URL （您的伺服器 URL + /webhook）。
+### 2. 設定線路通道
 
-啟用使用 webhook 。
 
-前往LINE開發者控制台。
 
-建立 Provider 並建立 Messaging API Channel。
+1. 前往 [Line 開發者控制台](https://developers.line.biz/console/)
 
-在 Messaging API 頁籤中：
+2. 建立 Provider（如果還沒有）
 
-取得Channel Access Token 。
+3. 建立**Messaging API Channel**
 
-設定 Webhook URL (部署網址 + /webhook)。
+4. 在 **Messaging API** 頁籤中：
 
-開啟 Use webhook。
+   - 取得 **Channel Access Token**（點擊 Issue 產生）
 
-3. Environment Configuration / 設定環境變數
-We use .env to protect sensitive credentials. 我們使用 .env 檔案來保護敏感資訊。
+   - 設定 **Webhook URL**（部署後的網址 + `/webhook`）
 
-```bash
+   - 開啟 **Use webhook**
 
-# Copy template / 複製範例檔案
-cp .env.example .env
 
-# Edit .env and fill in your LINE_CHANNEL_ACCESS_TOKEN and other keys.
-# 編輯 .env，填入您的 Token 與相關設定。
-4. Start Service / 啟動服務
-```bash
 
-# Development mode with auto-reload / 開發模式
+### 3. 設定環境變數
+
+
+
+『`bash
+
+# 複製範例檔案
+
+cp .env.example.env
+
+
+
+# 編輯 .env，填入你的 Channel Access Token
+
+```
+
+
+
+或直接修改`main.py` 中的`LINE_CHANNEL_ACCESS_TOKEN`。
+
+
+
+### 4. 啟動服務
+
+
+
+『`bash
+
+# 開發模式（自動重載）
+
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
-Access http://localhost:8000/docs to view Interactive API Documentation. 啟動後訪問 http://localhost:8000/docs 查看 API 文件。
 
-💻 API Usage Examples / 使用範例
-Push Message / 推播訊息
-```bash
+
+
+# 或直接執行
+
+python main.py
+
+```
+
+
+
+服務啟動後，可訪問 http://localhost:8000/docs 查看 API 文件。
+
+
+
+## API 使用範例
+
+
+
+### 推播訊息給指定用戶
+
+
+
+『`bash
 
 curl -X POST "http://localhost:8000/send" \
+
   -H "Content-Type: application/json" \
-  -d '{
+
+  -d'{
+
     "user_id": "U1234567890abcdef",
-    "message": "Hazard Alert: Gas Leak Detected!"
+
+    "message": "來自 API 的問候！"
+
   }'
-Broadcast / 廣播訊息
-```bash
+
+```
+
+
+
+### 廣播訊息給所有好友
+
+
+
+『`bash
 
 curl -X POST "http://localhost:8000/broadcast" \
-  -H "Content-Type: application/json" \
-  -d '{ "message": "This is a broadcast message!" }'
-📡 Local Testing (ngrok) / 本地測試
-To receive Webhooks on your local machine, use ngrok: 若要在本機接收 Webhook，建議使用 ngrok：
 
-```bash
+  -H "Content-Type: application/json" \
+
+  -d'{
+
+    "message": "這是廣播訊息！"
+
+  }'
+
+```
+
+
+
+### 推播給多個用戶
+
+
+
+『`bash
+
+curl -X POST "http://localhost:8000/multicast" \
+
+  -H "Content-Type: application/json" \
+
+  -d'{
+
+    "user_ids": ["U123...", "U456..."],
+
+    "message": "群發訊息"
+
+  }'
+
+```
+
+
+
+## 如何取得User ID
+
+
+
+User ID 可以從以下方式取得：
+
+
+
+1. **Webhook 事件** - 當用戶傳訊息給 Bot 時，webhook 會收到包含 `userId` 的事件
+
+2. **Line Login** - 透過 Line Login 取得用戶資訊
+
+3. **Bot 後台** - 部分情況下可從 Line Official Account Manager 查看
+
+
+
+## 部署建議
+
+
+
+### 使用 ngrok 測試（本地開發）
+
+
+
+『`bash
+
+# 安裝 ngrok 後
 
 ngrok http 8000
-# Update the generated HTTPS URL to your LINE Developer Console Webhook setting.
-# 將產生的 HTTPS 網址設定為 LINE 後台的 Webhook URL。
-⚠️ Notes / 注意事項
-Quotas: Push and Multicast messages have limits on free plans. (免費方案的推播次數有限制)
 
-Reply Tokens: These are free but valid only for a short period. (回覆訊息免費但時效極短)
 
-Security: Never commit your .env file to GitHub. (切勿將 .env 上傳至 GitHub)
+
+# 將產生的 https 網址設定為 Webhook URL
+
+# 例如：https://xxxx.ngrok.io/webhook
+
+```
+
+
+
+### 正式部署
+
+
+
+建議部署到：
+
+- **鐵路**
+
+- **使成為**
+
+- **赫羅庫**
+
+- **AWS / GCP / Azure**
+
+
+
+確保：
+
+1. 使用HTTPS
+
+2. 設定環境變數
+
+3. Webhook URL 設定正確
+
+
+
+## 注意事項
+
+
+
+- Push 訊息和 Multicast 在免費方案中有數量限制
+
+- Reply 訊息免費且無限制，但 reply token 只有短時間有效
+
+- Broadcast 會發送給所有加入好友的用戶
